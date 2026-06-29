@@ -111,7 +111,6 @@ Compat = {}
 ------------------------------------------------------------------------------
 
 Compat.Version = _VERSION
-
 Compat.IsLua51 = (_VERSION == "Lua 5.1")
 
 ------------------------------------------------------------------------------
@@ -140,15 +139,10 @@ Compat.NewLine =
 OSP = {}
 
 OSP.Name = "Orthanc Study Processor"
-
 OSP.Version = "2.0.0-alpha"
-
 OSP.Build = "2026.06.29.001"
-
 OSP.Target = "Lua 5.1"
-
 OSP.Platform = "Windows"
-
 OSP.Architecture = 1
 
 ------------------------------------------------------------------------------
