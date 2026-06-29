@@ -103,6 +103,7 @@
 --
 ------------------------------------------------------------------------------
 
+
 Compat = {}
 
 ------------------------------------------------------------------------------
@@ -134,6 +135,7 @@ Compat.PathSeparator =
 
 Compat.NewLine =
     Compat.IsWindows and "\r\n" or "\n"
+	
 	
 OSP = {}
 
@@ -197,13 +199,10 @@ end
 ------------------------------------------------------------------------------
 
 function Utils.Default(value, defaultValue)
-
     if value == nil then
         return defaultValue
     end
-
     return value
-
 end
 
 ------------------------------------------------------------------------------
@@ -211,32 +210,23 @@ end
 ------------------------------------------------------------------------------
 
 function Utils.Trim(value)
-
     if value == nil then
         return ""
     end
-
     return (value:gsub("^%s*(.-)%s*$", "%1"))
-
 end
 
 function Utils.IsEmpty(value)
-
     return Utils.Trim(value) == ""
-
 end
 
 function Utils.StartsWith(text, prefix)
-
     return text:sub(1, #prefix) == prefix
-
 end
 
 function Utils.EndsWith(text, suffix)
-
     return suffix == ""
         or text:sub(-#suffix) == suffix
-
 end
 
 ------------------------------------------------------------------------------
@@ -244,33 +234,23 @@ end
 ------------------------------------------------------------------------------
 
 function Utils.TableCount(tableValue)
-
     local count = 0
-
     for _ in pairs(tableValue) do
         count = count + 1
     end
-
     return count
-
 end
 
 function Utils.TableIsEmpty(tableValue)
-
     return next(tableValue) == nil
-
 end
 
 function Utils.ShallowCopy(source)
-
     local destination = {}
-
     for key, value in pairs(source) do
         destination[key] = value
     end
-
     return destination
-
 end
 
 ------------------------------------------------------------------------------
@@ -278,27 +258,17 @@ end
 ------------------------------------------------------------------------------
 
 function Utils.Timestamp()
-
     return os.date("%Y-%m-%d %H:%M:%S")
-
 end
 
 function Utils.GenerateProcessingID()
-
     local now = os.date("%Y%m%d%H%M%S")
-
     local random = math.random(100000,999999)
-
     return string.format(
-
         "OSP-%s-%06d",
-
         now,
-
         random
-
     )
-
 end
 
 ------------------------------------------------------------------------------
@@ -306,9 +276,7 @@ end
 ------------------------------------------------------------------------------
 
 function Utils.Try(callback)
-
     return pcall(callback)
-
 end
 
 local function Write(level,
@@ -318,159 +286,206 @@ local function Write(level,
 
     local timestamp =
         Utils.Timestamp()
-
     local processingId = "-"
-
     local revision = "-"
-
     local state = "-"
-
     if processing then
-
         processingId =
             processing.ID or "-"
-
         revision =
             processing.Revision or "-"
-
         state =
             processing.State or "-"
-
     end
 
     print(string.format(
-
         "[%s] %-7s %-12s PID=%s REV=%s STATE=%s %s",
-
         timestamp,
-
         level,
-
         module,
-
         processingId,
-
         revision,
-
         state,
-
         message
-
     ))
-
 end
 
-function Log.Info(processing,
-                  module,
-                  message)
-
+function Log.Info(processing,module,message)
     Write(
-
-        Log.Level.INFO,
-
+       Log.Level.INFO,
         processing,
-
         module,
-
         message
-
     )
-
 end
 
 function Validate.NotNil(value, name)
-
     if value == nil then
-
         error(string.format(
-
             "'%s' cannot be nil.",
-
             name
-
         ))
-
     end
-
     return true
-
 end
 
 function Validate.NotEmpty(value, name)
-
     Validate.NotNil(value, name)
-
     if Utils.Trim(value) == "" then
-
         error(string.format(
-
             "'%s' cannot be empty.",
-
             name
-
         ))
-
     end
-
     return true
-
 end
 
 function Validate.Table(value, name)
-
     if not Utils.IsTable(value) then
-
         error(string.format(
-
             "'%s' must be a table.",
-
             name
-
         ))
-
     end
-
     return true
-
 end
 
 function Validate.Function(value, name)
-
     if not Utils.IsFunction(value) then
-
         error(string.format(
-
             "'%s' must be a function.",
-
             name
-
         ))
-
     end
-
     return true
-
 end
 
 function Validate.Processing(processing)
-
     Validate.Table(
-
         processing,
-
         "Processing"
-
     )
-
     Validate.NotNil(
-
         processing.ID,
-
         "Processing.ID"
-
     )
-
     return true
-
 end
+
+------------------------------------------------------------------------------
+-- FOUNDATION
+--
+-- Path
+--
+-- Canonical path manipulation.
+--
+-- Pure string operations.
+--
+-- This module never touches the filesystem.
+--
+------------------------------------------------------------------------------
+
+Path = {}
+
+local Separator = Compat.DirectorySeparator
+
+function Path.Combine(...)
+    local result = ""
+    local parts = { ... }
+    for _, part in ipairs(parts) do
+        if part ~= nil and part ~= "" then
+            part = Path.Normalize(part)
+            if result == "" then
+                result = part
+            else
+                if result:sub(-1) ~= Separator then
+                    result = result .. Separator
+                end
+                if part:sub(1,1) == Separator then
+                    part = part:sub(2)
+                end
+                result = result .. part
+            end
+        end
+    end
+    return result
+end
+
+function Path.Normalize(path)
+    Validate.NotNil(path, "path")
+    path = path:gsub("[/\\]", Separator)
+    return path
+end
+
+function Path.FileName(path)
+    path = Path.Normalize(path)
+    return path:match("[^" .. Separator .. "]+$")
+end
+
+function Path.Parent(path)
+    path = Path.Normalize(path)
+    return path:match("^(.*)"
+        .. Separator
+        .. "[^"
+        .. Separator
+        .. "]+$")
+end
+
+function Path.Extension(path)
+    local name = Path.FileName(path)
+    return name:match("%.([^%.]+)$")
+end
+
+function Path.ChangeExtension(path, extension)
+    Validate.NotEmpty(extension, "extension")
+    path = path:gsub("%.[^%.]+$", "")
+    return path .. "." .. extension
+end
+
+--Module Foundation / Filesystem
+
+local function Execute(command)
+    local success = os.execute(command)
+    return success == 0 or success == true
+end
+
+function Filesystem.Exists(path)
+    local file = io.open(path, "rb")
+    if file then
+        file:close()
+        return true
+    end
+    return false
+end
+
+
+function Filesystem.CreateDirectory(path)
+    Validate.NotEmpty(path, "path")
+    path = Path.Normalize(path)
+    local command =
+        string.format('mkdir "%s"', path)
+    return Execute(command)
+end
+
+function Filesystem.ReadFile(path)
+    local file =
+        assert(io.open(path, "rb"))
+    local content =
+        file:read("*all")
+    file:close()
+    return content
+end
+
+function Filesystem.WriteFile(path, text)
+    local file =
+        assert(io.open(path, "wb"))
+    file:write(text)
+    file:close()
+end
+
+
+
+
+
+
 	
