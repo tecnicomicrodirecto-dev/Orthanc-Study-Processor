@@ -1,52 +1,61 @@
-local Result = {}
+------------------------------------------------------------------------------
+-- OSP Result
+--
+-- Represents operational success or failure.
+------------------------------------------------------------------------------
 
+local Validation = require("osp.foundation.validation")
+
+local Result = {}
 Result.__index = Result
 
-local function new(success)
+------------------------------------------------------------------------------
+-- Private Functions
+------------------------------------------------------------------------------
 
-    local self = {
+local function new(success, code, message, data, context)
 
-        Success = success,
-
-        Code = nil,
-
-        Message = nil,
-
-        Data = nil,
-
-        Context = nil
-
-    }
-
-    return setmetatable(self, Result)
+    return setmetatable({
+        _success = success,
+        _code = code,
+        _message = message,
+        _data = data,
+        _context = context
+    }, Result)
 
 end
 
+------------------------------------------------------------------------------
+-- Public Functions
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+--- Creates a successful result.
+--
+-- @param data any
+-- @return table
+------------------------------------------------------------------------------
 function Result.Success(data)
 
-    local result = new(true)
-
-    result.Data = data
-
-    return result
+    return new(true, nil, nil, data, nil)
 
 end
 
+------------------------------------------------------------------------------
+--- Creates a failed result.
+--
+-- @param code string
+-- @param message string
+-- @return table
+------------------------------------------------------------------------------
 function Result.Failure(code, message)
 
-    local result = new(false)
+    Validation.NotEmpty(code, "code")
+    Validation.NotEmpty(message, "message")
 
-    result.Code = code
-
-    result.Message = message
-
-    return result
+    return new(false, code, message, nil, nil)
 
 end
-
-------------------------------------------------------------------------------
--- Result Methods
-------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
 --- Returns true if the operation succeeded.
@@ -55,7 +64,7 @@ end
 ------------------------------------------------------------------------------
 function Result:IsSuccess()
 
-    return self._success
+    return self._success == true
 
 end
 
@@ -66,7 +75,7 @@ end
 ------------------------------------------------------------------------------
 function Result:IsFailure()
 
-    return not self._success
+    return not self:IsSuccess()
 
 end
 
@@ -115,44 +124,38 @@ function Result:GetContext()
 end
 
 ------------------------------------------------------------------------------
---- Attaches diagnostic context.
---
--- This method returns a new Result object.
+--- Attaches diagnostic context and returns a new result.
 --
 -- @param context table
---
--- @return Result
+-- @return table
 ------------------------------------------------------------------------------
 function Result:WithContext(context)
 
-    local copy = new(self._success)
-
-    copy._code = self._code
-    copy._message = self._message
-    copy._data = self._data
-    copy._context = context
-
-    return copy
+    return new(
+        self._success,
+        self._code,
+        self._message,
+        self._data,
+        context
+    )
 
 end
 
 ------------------------------------------------------------------------------
---- Returns a new successful result with different data.
+--- Replaces the data value and returns a new result.
 --
 -- @param value any
---
--- @return Result
+-- @return table
 ------------------------------------------------------------------------------
 function Result:WithData(value)
 
-    local copy = new(self._success)
-
-    copy._code = self._code
-    copy._message = self._message
-    copy._data = value
-    copy._context = self._context
-
-    return copy
+    return new(
+        self._success,
+        self._code,
+        self._message,
+        value,
+        self._context
+    )
 
 end
 
@@ -162,8 +165,7 @@ end
 -- @param success boolean
 -- @param code string|nil
 -- @param message string|nil
---
--- @return Result
+-- @return table
 ------------------------------------------------------------------------------
 function Result.FromBoolean(success, code, message)
 
@@ -182,7 +184,6 @@ end
 --- Returns true if the supplied value is a Result instance.
 --
 -- @param value any
---
 -- @return boolean
 ------------------------------------------------------------------------------
 function Result.IsResult(value)
@@ -192,30 +193,21 @@ function Result.IsResult(value)
 end
 
 ------------------------------------------------------------------------------
---- Combines multiple Results.
---
--- Returns the first failure encountered.
--- If every Result succeeds, returns a new successful Result.
+--- Returns the first failed Result or a successful Result.
 --
 -- @param ...
---
--- @return Result
+-- @return table
 ------------------------------------------------------------------------------
 function Result.Combine(...)
 
     local results = { ... }
 
     for _, result in ipairs(results) do
-
-        assert(
-            Result.IsResult(result),
-            "Result.Combine() expects Result objects."
-        )
+        Validation.Require(Result.IsResult(result), "Result object expected.")
 
         if result:IsFailure() then
             return result
         end
-
     end
 
     return Result.Success()
@@ -235,11 +227,10 @@ function Result:ToString()
 
     return string.format(
         "[%s] %s",
-        tostring(self:GetCode()),
-        tostring(self:GetMessage())
+        tostring(self._code),
+        tostring(self._message)
     )
 
 end
 
-------------------------------------------------------------------------------
 return Result

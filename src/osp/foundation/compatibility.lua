@@ -1,43 +1,32 @@
 ------------------------------------------------------------------------------
--- OSP - Orthanc Study Processor
+-- OSP Compatibility
 --
--- Module:
---     osp.foundation.compatibility
---
--- Purpose:
---     Provides compatibility helpers for Lua and Orthanc.
---
--- Responsibilities:
---     - Detect runtime capabilities
---     - Wrap JSON encode/decode
---     - Detect Orthanc version (when available)
---     - Expose feature flags
---
--- This module contains no business logic.
---
+-- Runtime capability detection and JSON wrappers.
 ------------------------------------------------------------------------------
 
-local M = {}
+local Validation = require("osp.foundation.validation")
+
+local Compatibility = {}
 
 ------------------------------------------------------------------------------
 -- Private State
 ------------------------------------------------------------------------------
 
-local _runtime = {
-    luaVersion = _VERSION or "Unknown",
-    orthancVersion = "Unknown",
-    initialized = false
+local runtime = {
+    LuaVersion = _VERSION or "Unknown",
+    OrthancVersion = "Unknown",
+    Initialized = false
 }
 
-local _features = {
-    json = false,
-    restApi = false,
-    modifyInstance = false,
-    deleteResource = false
+local features = {
+    Json = false,
+    RestApi = false,
+    ModifyInstance = false,
+    DeleteResource = false
 }
 
 ------------------------------------------------------------------------------
--- Private Helpers
+-- Private Functions
 ------------------------------------------------------------------------------
 
 local function functionExists(name)
@@ -47,246 +36,110 @@ local function functionExists(name)
 end
 
 ------------------------------------------------------------------------------
--- Initialization
+-- Public Functions
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
 --- Detects runtime capabilities.
---
--- Safe to call multiple times.
 ------------------------------------------------------------------------------
+function Compatibility.Initialize()
 
-function M.Initialize()
-
-    if _runtime.initialized then
+    if runtime.Initialized then
         return
     end
 
-    --------------------------------------------------------------------------
-    -- Feature Detection
-    --------------------------------------------------------------------------
-
-    _features.json =
+    features.Json =
         functionExists("ParseJson") and
         functionExists("DumpJson")
 
-    _features.restApi =
+    features.RestApi =
         functionExists("RestApiGet") and
         functionExists("RestApiPost") and
         functionExists("RestApiPut") and
         functionExists("RestApiDelete")
 
-    _features.modifyInstance =
-        functionExists("ModifyInstance")
-
-    _features.deleteResource =
-        functionExists("Delete")
-
-    --------------------------------------------------------------------------
-    -- Orthanc Version
-    --------------------------------------------------------------------------
+    features.ModifyInstance = functionExists("ModifyInstance")
+    features.DeleteResource = functionExists("Delete")
 
     if functionExists("GetOrthancVersion") then
-
         local ok, version = pcall(GetOrthancVersion)
 
-        if ok and version then
-            _runtime.orthancVersion = tostring(version)
+        if ok and version ~= nil then
+            runtime.OrthancVersion = tostring(version)
         end
-
     end
 
-    _runtime.initialized = true
+    runtime.Initialized = true
 
 end
 
 ------------------------------------------------------------------------------
---- Returns the Lua version.
---
--- @return string
-------------------------------------------------------------------------------
-
-function M.GetLuaVersion()
-
-    return _runtime.luaVersion
-
-end
-
-------------------------------------------------------------------------------
---- Returns the Orthanc version.
---
--- @return string
-------------------------------------------------------------------------------
-
-function M.GetOrthancVersion()
-
-    return _runtime.orthancVersion
-
-end
-
-------------------------------------------------------------------------------
---- Returns true if JSON support is available.
---
--- @return boolean
-------------------------------------------------------------------------------
-
-function M.HasJson()
-
-    return _features.json
-
-end
-
-------------------------------------------------------------------------------
---- Returns true if REST API helpers are available.
---
--- @return boolean
-------------------------------------------------------------------------------
-
-function M.HasRestApi()
-
-    return _features.restApi
-
-end
-
-------------------------------------------------------------------------------
---- Returns true if ModifyInstance() exists.
---
--- @return boolean
-------------------------------------------------------------------------------
-
-function M.HasModifyInstance()
-
-    return _features.modifyInstance
-
-end
-
-------------------------------------------------------------------------------
---- Returns true if Delete() exists.
---
--- @return boolean
-------------------------------------------------------------------------------
-
-function M.HasDelete()
-
-    return _features.deleteResource
-
-end
-
-------------------------------------------------------------------------------
--- Module
-------------------------------------------------------------------------------
-
-return M
-
-------------------------------------------------------------------------------
--- JSON Compatibility
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
---- Safely decodes a JSON document.
+--- Decodes JSON using Orthanc's JSON helper.
 --
 -- @param json string
---      JSON document.
---
 -- @return table
---
--- @raise
---      Error if JSON support is unavailable or the document is invalid.
 ------------------------------------------------------------------------------
-function M.DecodeJson(json)
+function Compatibility.DecodeJson(json)
 
-    if not _runtime.initialized then
-        M.Initialize()
-    end
+    Compatibility.Initialize()
+    Validation.Type(json, "json", "string")
 
-    if not _features.json then
+    if not features.Json then
         error("JSON support is unavailable.")
     end
 
-    if type(json) ~= "string" then
-        error("DecodeJson() expects a JSON string.")
+    local ok, value = pcall(ParseJson, json)
+
+    if not ok then
+        error("Invalid JSON document: " .. tostring(value))
     end
 
-    local success, result =
-        pcall(ParseJson, json)
-
-    if not success then
-        error(
-            string.format(
-                "Invalid JSON document: %s",
-                tostring(result)
-            )
-        )
-    end
-
-    return result
+    return value
 
 end
 
 ------------------------------------------------------------------------------
---- Safely encodes a Lua table as JSON.
+--- Encodes a Lua value using Orthanc's JSON helper.
 --
--- @param value table
---
+-- @param value any
 -- @return string
 ------------------------------------------------------------------------------
-function M.EncodeJson(value)
+function Compatibility.EncodeJson(value)
 
-    if not _runtime.initialized then
-        M.Initialize()
-    end
+    Compatibility.Initialize()
 
-    if not _features.json then
+    if not features.Json then
         error("JSON support is unavailable.")
     end
 
-    local success, result =
-        pcall(DumpJson, value)
+    local ok, json = pcall(DumpJson, value)
 
-    if not success then
-        error(
-            string.format(
-                "Unable to encode JSON: %s",
-                tostring(result)
-            )
-        )
+    if not ok then
+        error("Unable to encode JSON: " .. tostring(json))
     end
 
-    return result
+    return json
 
 end
 
 ------------------------------------------------------------------------------
--- Runtime Information
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
---- Returns an immutable snapshot of the detected runtime.
+--- Returns an immutable runtime snapshot.
 --
 -- @return table
 ------------------------------------------------------------------------------
-function M.GetRuntime()
+function Compatibility.GetRuntime()
 
-    if not _runtime.initialized then
-        M.Initialize()
-    end
+    Compatibility.Initialize()
 
     return {
-
-        LuaVersion = _runtime.luaVersion,
-
-        OrthancVersion = _runtime.orthancVersion,
-
+        LuaVersion = runtime.LuaVersion,
+        OrthancVersion = runtime.OrthancVersion,
         Features = {
-
-            Json = _features.json,
-
-            RestApi = _features.restApi,
-
-            ModifyInstance = _features.modifyInstance
-
+            Json = features.Json,
+            RestApi = features.RestApi,
+            ModifyInstance = features.ModifyInstance,
+            DeleteResource = features.DeleteResource
         }
-
     }
 
 end
@@ -296,81 +149,49 @@ end
 --
 -- @return boolean
 ------------------------------------------------------------------------------
-function M.IsOrthanc()
+function Compatibility.IsOrthanc()
 
-    if not _runtime.initialized then
-        M.Initialize()
-    end
+    Compatibility.Initialize()
 
-    return _features.restApi
+    return features.RestApi
 
 end
 
 ------------------------------------------------------------------------------
---- Returns true if the current Lua runtime is Lua 5.1.
---
--- OSP officially targets Lua 5.1.
+--- Returns true when the runtime reports Lua 5.1.
 --
 -- @return boolean
 ------------------------------------------------------------------------------
-function M.IsLua51()
+function Compatibility.IsLua51()
 
-    return _runtime.luaVersion == "Lua 5.1"
+    return runtime.LuaVersion == "Lua 5.1"
 
 end
 
 ------------------------------------------------------------------------------
--- Diagnostics
+--- Returns true when the current runtime satisfies OSP requirements.
+--
+-- @return boolean
 ------------------------------------------------------------------------------
+function Compatibility.Validate()
+
+    Compatibility.Initialize()
+
+    return Compatibility.IsLua51() and features.Json and features.RestApi
+
+end
 
 ------------------------------------------------------------------------------
---- Returns a diagnostic report describing the current runtime.
+--- Returns a diagnostic report.
 --
 -- @return table
 ------------------------------------------------------------------------------
-function M.GetDiagnostics()
-
-    if not _runtime.initialized then
-        M.Initialize()
-    end
+function Compatibility.GetDiagnostics()
 
     return {
-
-        Compatible =
-            _features.json and
-            _features.restApi,
-
-        Runtime = M.GetRuntime()
-
+        Compatible = Compatibility.Validate(),
+        Runtime = Compatibility.GetRuntime()
     }
-
-end
-
-------------------------------------------------------------------------------
---- Performs a runtime compatibility check.
---
--- @return boolean
---      True if the current runtime satisfies the minimum OSP requirements.
-------------------------------------------------------------------------------
-function M.Validate()
-
-    if not _runtime.initialized then
-        M.Initialize()
-    end
-
-    if not M.IsLua51() then
-        return false
-    end
-
-    if not _features.json then
-        return false
-    end
-
-    if not _features.restApi then
-        return false
-    end
-
-    return true
 
 end
 
@@ -379,56 +200,24 @@ end
 --
 -- @return string
 ------------------------------------------------------------------------------
-function M.GetReport()
+function Compatibility.GetReport()
 
-    local runtime = M.GetRuntime()
+    local detected = Compatibility.GetRuntime()
 
-    local lines = {
-
+    return table.concat({
         "OSP Compatibility Report",
         "------------------------",
-
-        string.format(
-            "Lua Version      : %s",
-            runtime.LuaVersion
-        ),
-
-        string.format(
-            "Orthanc Version  : %s",
-            runtime.OrthancVersion
-        ),
-
+        "Lua Version      : " .. detected.LuaVersion,
+        "Orthanc Version  : " .. detected.OrthancVersion,
         "",
-
-        string.format(
-            "JSON             : %s",
-            runtime.Features.Json and "OK" or "Unavailable"
-        ),
-
-        string.format(
-            "REST API         : %s",
-            runtime.Features.RestApi and "OK" or "Unavailable"
-        ),
-
-        string.format(
-            "ModifyInstance   : %s",
-            runtime.Features.ModifyInstance and
-            "Available" or
-            "Unavailable"
-        ),
-
+        "JSON             : " .. (detected.Features.Json and "OK" or "Unavailable"),
+        "REST API         : " .. (detected.Features.RestApi and "OK" or "Unavailable"),
+        "ModifyInstance   : " .. (detected.Features.ModifyInstance and "Available" or "Unavailable"),
+        "Delete           : " .. (detected.Features.DeleteResource and "Available" or "Unavailable"),
         "",
-
-        string.format(
-            "Status           : %s",
-            M.Validate() and
-            "Compatible" or
-            "Unsupported"
-        )
-
-    }
-
-    return table.concat(lines, "\n")
+        "Status           : " .. (Compatibility.Validate() and "Compatible" or "Unsupported")
+    }, "\n")
 
 end
-	
+
+return Compatibility
