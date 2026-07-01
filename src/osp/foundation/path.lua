@@ -1,171 +1,208 @@
 ------------------------------------------------------------------------------
 -- OSP Path
 --
--- Reusable path manipulation helpers.
+-- Pure path manipulation helpers.
+--
+-- This module performs string operations only. It never touches the filesystem.
+-- Every filesystem interaction belongs in the infrastructure/filesystem layer.
 ------------------------------------------------------------------------------
 
-local Constants = require("osp.foundation.constants")
 local Validation = require("osp.foundation.validation")
 
 local Path = {}
 
 ------------------------------------------------------------------------------
--- Constants
+-- Private Helpers
 ------------------------------------------------------------------------------
 
-local WINDOWS_SEPARATOR = Constants.Platform.WindowsSeparator
-local UNIX_SEPARATOR = Constants.Platform.UnixSeparator
+local DEFAULT_SEPARATOR = "/"
 
-------------------------------------------------------------------------------
--- Private Functions
-------------------------------------------------------------------------------
+local function trimTrailingSeparators(path)
 
-local function normalizeSeparator(separator)
+    while #path > 1 do
 
-    if separator == nil or separator == "" then
-        return WINDOWS_SEPARATOR
-    end
+        local last = path:sub(-1)
 
-    return separator
-
-end
-
-local function trimTrailingSeparator(value)
-
-    while #value > 1 do
-        local last = string.sub(value, -1)
-
-        if last ~= WINDOWS_SEPARATOR and last ~= UNIX_SEPARATOR then
+        if last ~= "/" and last ~= "\\" then
             break
         end
 
-        value = string.sub(value, 1, -2)
+        path = path:sub(1, -2)
+
     end
 
-    return value
+    return path
 
 end
 
-------------------------------------------------------------------------------
--- Public Functions
-------------------------------------------------------------------------------
+local function splitExtension(path)
 
-------------------------------------------------------------------------------
---- Returns the preferred platform separator.
---
--- @return string
-------------------------------------------------------------------------------
-function Path.GetSeparator()
+    local filename = path:match("([^/\\]+)$") or path
 
-    if package.config ~= nil then
-        return string.sub(package.config, 1, 1)
+    local position = filename:match("^.*()%.")
+    if not position then
+        return filename, ""
     end
 
-    return WINDOWS_SEPARATOR
+    return filename:sub(1, position - 1), filename:sub(position)
 
 end
 
 ------------------------------------------------------------------------------
---- Normalizes all separators in a path.
+-- Public API
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+--- Combines path fragments.
 --
--- @param value string
--- @param separator string|nil
+-- Nil or empty fragments are ignored.
+--
 -- @return string
 ------------------------------------------------------------------------------
-function Path.Normalize(value, separator)
+function Path.Combine(...)
 
-    Validation.Type(value, "value", "string")
+    local parts = { ... }
+    local result = {}
 
-    local selected = normalizeSeparator(separator or Path.GetSeparator())
-    local normalized = string.gsub(value, "[/\\]", selected)
+    for _, part in ipairs(parts) do
 
-    return trimTrailingSeparator(normalized)
+        if part ~= nil and part ~= "" then
 
-end
+            Validation.Type(part, "path", "string")
 
-------------------------------------------------------------------------------
---- Joins path segments with one separator between each segment.
---
--- @param ...
--- @return string
-------------------------------------------------------------------------------
-function Path.Join(...)
+            table.insert(
+                result,
+                trimTrailingSeparators(part)
+            )
 
-    local segments = { ... }
-    local separator = Path.GetSeparator()
-    local parts = {}
-
-    for _, segment in ipairs(segments) do
-        if segment ~= nil and tostring(segment) ~= "" then
-            local value = tostring(segment)
-            value = string.gsub(value, "[/\\]+$", "")
-            value = string.gsub(value, "^[/\\]+", "")
-
-            if #parts == 0 then
-                value = tostring(segment)
-                value = string.gsub(value, "[/\\]+$", "")
-            end
-
-            table.insert(parts, value)
         end
+
     end
 
-    return Path.Normalize(table.concat(parts, separator), separator)
+    return table.concat(result, DEFAULT_SEPARATOR)
 
 end
 
 ------------------------------------------------------------------------------
---- Returns the final path segment.
+--- Normalizes directory separators.
 --
--- @param value string
+-- @param path string
 -- @return string
 ------------------------------------------------------------------------------
-function Path.Basename(value)
+function Path.Normalize(path)
 
-    Validation.Type(value, "value", "string")
+    Validation.Type(path, "path", "string")
 
-    local normalized = Path.Normalize(value)
-    local name = string.match(normalized, "([^/\\]+)$")
+    path = path:gsub("\\", DEFAULT_SEPARATOR)
+    path = path:gsub("/+", DEFAULT_SEPARATOR)
 
-    return name or normalized
+    return path
 
 end
 
 ------------------------------------------------------------------------------
---- Returns the directory portion of a path.
---
--- @param value string
--- @return string
+--- Returns the filename.
 ------------------------------------------------------------------------------
-function Path.Dirname(value)
+function Path.FileName(path)
 
-    Validation.Type(value, "value", "string")
+    Validation.Type(path, "path", "string")
 
-    local normalized = Path.Normalize(value)
-    local directory = string.match(normalized, "^(.*)[/\\][^/\\]+$")
-
-    return directory or "."
+    return path:match("([^/\\]+)$") or ""
 
 end
 
 ------------------------------------------------------------------------------
---- Combines a filename and extension.
---
--- @param stem string
--- @param extension string
--- @return string
+--- Returns the filename without extension.
 ------------------------------------------------------------------------------
-function Path.WithExtension(stem, extension)
+function Path.FileNameWithoutExtension(path)
 
-    Validation.NotEmpty(stem, "stem")
-    Validation.NotEmpty(extension, "extension")
+    local filename = Path.FileName(path)
 
-    if string.sub(extension, 1, 1) ~= "." then
-        extension = "." .. extension
+    local stem = splitExtension(filename)
+
+    return stem
+
+end
+
+------------------------------------------------------------------------------
+--- Returns the extension including the leading '.'.
+------------------------------------------------------------------------------
+function Path.Extension(path)
+
+    Validation.Type(path, "path", "string")
+
+    local _, extension = splitExtension(path)
+
+    return extension
+
+end
+
+------------------------------------------------------------------------------
+--- Returns the directory portion.
+------------------------------------------------------------------------------
+function Path.DirectoryName(path)
+
+    Validation.Type(path, "path", "string")
+
+    return path:match("^(.*)[/\\][^/\\]+$") or ""
+
+end
+
+------------------------------------------------------------------------------
+--- Changes the file extension.
+------------------------------------------------------------------------------
+function Path.ChangeExtension(path, extension)
+
+    Validation.Type(path, "path", "string")
+    Validation.Type(extension, "extension", "string")
+
+    local directory = Path.DirectoryName(path)
+    local filename = Path.FileNameWithoutExtension(path)
+
+    local result = filename
+
+    if extension ~= "" then
+
+        if extension:sub(1, 1) ~= "." then
+            extension = "." .. extension
+        end
+
+        result = result .. extension
+
     end
 
-    return stem .. extension
+    if directory == "" then
+        return result
+    end
+
+    return Path.Combine(directory, result)
 
 end
 
+------------------------------------------------------------------------------
+--- Returns true if the path is absolute.
+------------------------------------------------------------------------------
+function Path.IsAbsolute(path)
+
+    Validation.Type(path, "path", "string")
+
+    return
+        path:match("^%a:[/\\]") ~= nil or
+        path:sub(1,1) == "/" or
+        path:sub(1,2) == "\\\\"
+
+end
+
+------------------------------------------------------------------------------
+--- Ensures exactly one trailing separator.
+------------------------------------------------------------------------------
+function Path.EnsureTrailingSeparator(path)
+
+    Validation.Type(path, "path", "string")
+
+    return trimTrailingSeparators(path) .. DEFAULT_SEPARATOR
+
+end
+
+------------------------------------------------------------------------------
 return Path
