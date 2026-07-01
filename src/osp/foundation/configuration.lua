@@ -1,11 +1,20 @@
 ------------------------------------------------------------------------------
 -- OSP Configuration
 --
--- Normalizes OSP runtime configuration.
+-- Creates and normalizes the application configuration.
+--
+-- Configuration is created in three stages:
+--
+--   1. Build default values.
+--   2. Merge user overrides.
+--   3. Normalize derived values.
+--
+-- Derived values (workspace, archive, export, log...) are always rebuilt
+-- from the effective RootDirectory unless explicitly overridden.
 ------------------------------------------------------------------------------
 
-local Constants = require("osp.foundation.constants")
-local Path = require("osp.foundation.path")
+local Constants  = require("osp.foundation.constants")
+local Path       = require("osp.foundation.path")
 local Validation = require("osp.foundation.validation")
 
 local Configuration = {}
@@ -14,70 +23,123 @@ local Configuration = {}
 -- Constants
 ------------------------------------------------------------------------------
 
-local DEFAULT_ROOT = "C:\\Orthanc\\OSP"
+local DEFAULT_ROOT_DIRECTORY = "OSP"
 
 ------------------------------------------------------------------------------
 -- Private Functions
 ------------------------------------------------------------------------------
 
-local function merge(defaults, overrides)
+local function clone(source)
 
-    local output = {}
+    local destination = {}
 
-    for key, value in pairs(defaults) do
+    for key, value in pairs(source) do
+
         if type(value) == "table" then
-            output[key] = merge(value, {})
+            destination[key] = clone(value)
         else
-            output[key] = value
+            destination[key] = value
         end
+
     end
 
-    if overrides ~= nil then
-        for key, value in pairs(overrides) do
-            if type(value) == "table" and type(output[key]) == "table" then
-                output[key] = merge(output[key], value)
-            else
-                output[key] = value
-            end
-        end
-    end
-
-    return output
+    return destination
 
 end
 
-local function defaults()
+------------------------------------------------------------------------------
+
+local function merge(destination, source)
+
+    if source == nil then
+        return destination
+    end
+
+    for key, value in pairs(source) do
+
+        if type(value) == "table"
+        and type(destination[key]) == "table" then
+
+            merge(destination[key], value)
+
+        else
+
+            destination[key] = value
+
+        end
+
+    end
+
+    return destination
+
+end
+
+------------------------------------------------------------------------------
+
+local function buildDefaults()
 
     return {
-        RootDirectory = DEFAULT_ROOT,
-        WorkspaceDirectory = Path.Join(DEFAULT_ROOT, "workspace"),
-        ArchiveDirectory = Path.Join(DEFAULT_ROOT, "archive"),
-        ExportDirectory = Path.Join(DEFAULT_ROOT, "export"),
-        LogDirectory = Path.Join(DEFAULT_ROOT, "logs"),
+
+        RootDirectory = DEFAULT_ROOT_DIRECTORY,
+
+        WorkspaceDirectory = nil,
+        ArchiveDirectory   = nil,
+        ExportDirectory    = nil,
+        LogDirectory       = nil,
+
         WorkflowVersion = Constants.Application.Version,
+
         DeleteSourceStudy = false,
         ReimportProcessedStudy = false,
+
         Formatting = {
             Enabled = false,
             Script = nil
         },
+
         Metadata = {
             PreserveOriginalStudyUID = true
         },
+
         Pacs = {
             Enabled = false,
             Peer = nil
         }
+
     }
 
 end
 
 ------------------------------------------------------------------------------
--- Public Functions
+
+local function normalize(configuration)
+
+    local root = configuration.RootDirectory
+
+    configuration.WorkspaceDirectory =
+        configuration.WorkspaceDirectory
+        or Path.Join(root, "workspace")
+
+    configuration.ArchiveDirectory =
+        configuration.ArchiveDirectory
+        or Path.Join(root, "archive")
+
+    configuration.ExportDirectory =
+        configuration.ExportDirectory
+        or Path.Join(root, "export")
+
+    configuration.LogDirectory =
+        configuration.LogDirectory
+        or Path.Join(root, "logs")
+
+end
+
+------------------------------------------------------------------------------
+-- Public API
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
---- Creates normalized configuration.
+--- Creates a normalized configuration table.
 --
 -- @param overrides table|nil
 -- @return table
@@ -88,15 +150,19 @@ function Configuration.Create(overrides)
         Validation.Type(overrides, "overrides", "table")
     end
 
-    local config = merge(defaults(), overrides or {})
+    local configuration = clone(buildDefaults())
 
-    Validation.NotEmpty(config.RootDirectory, "RootDirectory")
-    Validation.NotEmpty(config.WorkspaceDirectory, "WorkspaceDirectory")
-    Validation.NotEmpty(config.ArchiveDirectory, "ArchiveDirectory")
-    Validation.NotEmpty(config.ExportDirectory, "ExportDirectory")
-    Validation.NotEmpty(config.LogDirectory, "LogDirectory")
+    merge(configuration, overrides)
 
-    return config
+    normalize(configuration)
+
+    Validation.NotEmpty(configuration.RootDirectory, "RootDirectory")
+    Validation.NotEmpty(configuration.WorkspaceDirectory, "WorkspaceDirectory")
+    Validation.NotEmpty(configuration.ArchiveDirectory, "ArchiveDirectory")
+    Validation.NotEmpty(configuration.ExportDirectory, "ExportDirectory")
+    Validation.NotEmpty(configuration.LogDirectory, "LogDirectory")
+
+    return configuration
 
 end
 
@@ -107,10 +173,9 @@ end
 ------------------------------------------------------------------------------
 function Configuration.Load()
 
-    local overrides = rawget(_G, "OSP_CONFIGURATION")
-
-    return Configuration.Create(overrides)
+    return Configuration.Create(rawget(_G, "OSP_CONFIGURATION"))
 
 end
 
+------------------------------------------------------------------------------
 return Configuration
